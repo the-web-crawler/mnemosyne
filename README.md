@@ -58,6 +58,14 @@
    - **Update Config**: Edit `config.toml` and replace `100.x.y.z` with that IP.
    - **Apply**: `docker restart mnemosyne-store`
 
+6. **Connect Nodes**:
+   Run this **once** from any node to link them together:
+   ```bash
+   # Replace with the OTHER node's ID and IP
+   docker exec -it mnemosyne-store /garage node connect <NODE_ID>@<NODE_IP>:3901
+   ```
+   *Tip: Find Node IDs by running `docker exec mnemosyne-store /garage status` on each machine.*
+
 ## Directory Structure
 
 - `docker-compose.yml`: Defines the 4-container stack (Tailscale, Garage, Rclone, Dashboard).

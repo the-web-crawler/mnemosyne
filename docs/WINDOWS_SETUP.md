@@ -21,7 +21,18 @@ Run both installers (Default settings are fine).
 **After installing:**
 1.  **Restart** your computer.
 2.  Start **Docker Desktop** from the Start Menu.
-3.  It may ask to install the **WSL 2 Kernel**. Follow the link it provides (or run `wsl --install` in PowerShell).
+
+## Troubleshooting
+
+### "Docker Desktop requires the Workstation service"
+This error means the Windows "Server" or "Workstation" service is disabled.
+1.  Open **PowerShell** as Administrator.
+2.  Run:
+    ```powershell
+    Set-Service LanmanWorkstation -StartupType Automatic
+    Start-Service LanmanWorkstation
+    ```
+3.  Try starting Docker Desktop again.
 
 ## 2. Verify Installation
 
