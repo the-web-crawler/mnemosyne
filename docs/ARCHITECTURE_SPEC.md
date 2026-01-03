@@ -122,7 +122,7 @@ services:
 
   \# \--- Layer 4: The Management Dashboard \---  
   dashboard:  
-    image: arachnida/mnemosyne-dashboard:latest \# Custom build  
+    image: the-web-crawler/mnemosyne:latest \# Custom build  
     container\_name: mnemosyne-dash  
     restart: unless-stopped  
     network\_mode: service:tailscale  

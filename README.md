@@ -39,10 +39,13 @@
    - Edit `.env` and set `DATA_DIR=/mnt/ext_usb/mnemosyne_data`.
 
 4. **Start the Stack**:
+   After running the setup script:
    ```bash
-   docker compose up -d
+   docker compose up -d --build
    ```
-4. **Finalize Configuration**:
+   *Note: The `--build` flag ensures your local Dashboard is compiled from source.*
+
+5. **Finalize Configuration**:
    - Check the Tailscale IP of your new container.
    - Update `config.toml` with the correct `public_addr`.
    - Restart the stack: `docker compose restart`.

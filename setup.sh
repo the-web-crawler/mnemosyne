@@ -108,6 +108,12 @@ sed "s|DATA_DIR=.*|DATA_DIR=$DATA_DIR|g" .env > .env.tmp && mv .env.tmp .env
 echo -e "Updated ${GREEN}.env${NC}"
 
 # config.toml
+if [ -f config.toml ]; then
+    echo "Skipping config.toml creation (preserving existing)."
+else
+    cp config.toml.example config.toml
+fi
+
 # Replace the placeholders
 sed "s|replace_this_with_shared_32_byte_hex_secret|$RPC_SECRET|g" config.toml > config.toml.tmp && mv config.toml.tmp config.toml
 sed "s|REPLACE_WITH_RPC_SECRET_FROM_ENV_FILE|$RPC_SECRET|g" config.toml > config.toml.tmp && mv config.toml.tmp config.toml
@@ -117,4 +123,4 @@ echo -e "Updated ${GREEN}config.toml${NC}"
 
 echo ""
 echo -e "${GREEN}Setup Complete!${NC}"
-echo "Run 'docker compose up -d' to start."
+echo "Run 'docker compose up -d --build' to start."

@@ -71,6 +71,7 @@ powershell -Command "(Get-Content .env) -replace 'DATA_DIR=.*', 'DATA_DIR=%DATA_
 echo Updated .env
 
 :: Update config.toml
+if not exist config.toml copy config.toml.example config.toml
 powershell -Command "(Get-Content config.toml) -replace 'replace_this_with_shared_32_byte_hex_secret', '%RPC_SECRET%' | Set-Content config.toml"
 powershell -Command "(Get-Content config.toml) -replace 'REPLACE_WITH_RPC_SECRET_FROM_ENV_FILE', '%RPC_SECRET%' | Set-Content config.toml"
 powershell -Command "(Get-Content config.toml) -replace 'REPLACE_WITH_ADMIN_TOKEN_FROM_ENV_FILE', '%ADMIN_TOKEN%' | Set-Content config.toml"
@@ -81,5 +82,5 @@ echo.
 echo ==========================================
 echo           Setup Complete!
 echo ==========================================
-echo Run 'docker compose up -d' to start.
+echo Run 'docker compose up -d --build' to start.
 pause

@@ -22,7 +22,7 @@ services:
 
   # --- Layer 2: The Brain ---
   garage:
-    image: dxflrs/garage:v0.9
+    image: dxflrs/garage:v1.0.0
     container_name: mnemosyne-store
     restart: unless-stopped
     # SIDECAR: Share the network stack of Tailscale
@@ -54,10 +54,8 @@ services:
     # Serve WebDAV on port 8080 (Mapped by Tailscale container above)
     command: >
       serve webdav remote:archive  --addr :8080  --vfs-cache-mode full  --vfs-cache-max-size ${CACHE_SIZE}  --vfs-cache-max-age ${CACHE_AGE}  --dir-cache-time 1000h
-
-  # --- Layer 4: The Management Dashboard ---
   dashboard:
-    image: arachnida/mnemosyne-dashboard:latest # Custom build
+    build: ./dashboard
     container_name: mnemosyne-dash
     restart: unless-stopped
     network_mode: service:tailscale
