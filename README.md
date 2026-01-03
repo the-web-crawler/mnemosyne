@@ -14,21 +14,26 @@
 
 ### 2. Setup
 1. **Clone/Download** this repository to `~/mnemosyne` (or `C:\Mnemosyne` on Windows).
-2. **Configure Secrets & Network**:
-   ```bash
-   cp .env.example .env
-   nano .env
-   ```
-   **Critical Verification**:
-   - **`RPC_SECRET`**: The "Cluster Password".
-     - *Action*: Run `openssl rand -hex 32` **ONCE**.
-     - *Rule*: Copy this **exact string** to every single device in your cluster. They must all match to talk to each other.
-   - **`TS_AUTHKEY`**: Your Tailscale invite.
-     - *Action*: Go to [Tailscale Admin Console](https://login.tailscale.com/admin/settings/keys) > Settings > Keys > "Generate Auth Key".
-     - *Tip*: Use a "Reusable" key so you can use the same one for all laptops.
-   - **`TS_HOSTNAME`**: The Device Name.
-     - *Rule*: OPTIONAL but recommended. Set this to a unique name for this specific device (e.g., `grandpa-laptop`, `backup-server`). MUST be unique.
-3. **(Optional) External Drive**:
+2. **Run Config Script**:
+   We have automated scripts to generate secrets and configure keys.
+   - **Linux / macOS**:
+     ```bash
+     chmod +x setup.sh
+     ./setup.sh
+     ```
+   - **Windows**:
+     - Double-click `setup.bat`.
+
+   **The script will prompt you for:**
+   - **`RPC_SECRET`**: Leave blank to generate. (Shared across cluster).
+   - **`ADMIN_TOKEN`**: Leave blank to generate.
+   - **`TS_AUTHKEY`**: [Generate here](https://login.tailscale.com/admin/settings/keys).
+   - **`DATA_DIR`**: Location for Vault data.
+
+3. **(Optional) Verify Config**:
+   The script updates `.env` and `config.toml` automatically. You can check them if you wish.
+
+4. **Start the Stack**:
    If you want to store the Vault data on an external hard drive:
    - Mount the drive (e.g., to `/mnt/ext_usb`).
    - Edit `.env` and set `DATA_DIR=/mnt/ext_usb/mnemosyne_data`.
