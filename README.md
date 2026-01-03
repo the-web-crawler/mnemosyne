@@ -45,6 +45,9 @@
    ```
    *Note: The `--build` flag ensures your local Dashboard is compiled from source.*
 
+   **Access the Dashboard:**
+   Open [http://localhost:3000](http://localhost:3000) in your browser to view cluster status.
+
 5. **Finalize Configuration**:
    - Check the Tailscale IP of your new container.
    - Update `config.toml` with the correct `public_addr`.
