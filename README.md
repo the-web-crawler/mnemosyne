@@ -51,9 +51,12 @@
    Open [http://localhost:3000](http://localhost:3000) in your browser to view cluster status.
 
 5. **Finalize Configuration**:
-   - Check the Tailscale IP of your new container.
-   - Update `config.toml` with the correct `public_addr`.
-   - Restart the stack: `docker compose restart`.
+   - **Get your Container IP**:
+     ```bash
+     docker exec mnemosyne-net tailscale ip -4
+     ```
+   - **Update Config**: Edit `config.toml` and replace `100.x.y.z` with that IP.
+   - **Apply**: `docker restart mnemosyne-store`
 
 ## Directory Structure
 
