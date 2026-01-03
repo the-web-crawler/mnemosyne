@@ -71,7 +71,7 @@ fi
 echo ""
 
 # DATA_DIR
-echo -e "${GREEN}[5/5] Data Directory${NC}"
+echo -e "${GREEN}[5/6] Data Directory${NC}"
 echo "Where to store the Vault data? (Use '.' for internal drive)"
 read -p "Enter DATA_DIR (default: ./data): " INPUT_DATA
 if [ -z "$INPUT_DATA" ]; then
@@ -123,4 +123,16 @@ echo -e "Updated ${GREEN}config.toml${NC}"
 
 echo ""
 echo -e "${GREEN}Setup Complete!${NC}"
-echo "Run 'docker compose up -d --build' to start."
+echo "----------------------------------------------------"
+echo "NEXT STEPS:"
+echo "1. Start the stack:"
+echo -e "   ${CYAN}docker compose up -d --build${NC}"
+echo ""
+echo "2. Finalize Configuration (REQUIRED):"
+echo "   - Get your Tailscale IP: docker exec mnemosyne-net tailscale ip -4"
+echo "   - Edit 'config.toml' and replace '100.x.y.z' with that IP."
+echo "   - Restart: docker restart mnemosyne-store"
+echo ""
+echo "3. Connect Nodes (Run once per pair):"
+echo "   - docker exec -it mnemosyne-store /garage node connect <OTHER_ID>@<OTHER_IP>:3901"
+echo "----------------------------------------------------"

@@ -49,7 +49,7 @@ set /p TS_AUTHKEY="Enter TS_AUTHKEY: "
 echo.
 
 :: 5. DATA_DIR
-echo [5/5] Data Directory
+echo [5/6] Data Directory
 echo Where to store the Vault data? (e.g. D:\MnemosyneData)
 echo Default: ./data
 set /p DATA_DIR="Enter DATA_DIR: "
@@ -82,5 +82,17 @@ echo.
 echo ==========================================
 echo           Setup Complete!
 echo ==========================================
-echo Run 'docker compose up -d --build' to start.
+echo.
+echo NEXT STEPS:
+echo 1. Start the stack:
+echo    docker compose up -d --build
+echo.
+echo 2. Finalize Configuration (REQUIRED):
+echo    - Get your IP: docker exec mnemosyne-net tailscale ip -4
+echo    - Edit 'config.toml' -> replace '100.x.y.z' with that IP.
+echo    - Restart: docker restart mnemosyne-store
+echo.
+echo 3. Connect Nodes (Run once per pair):
+echo    - docker exec -it mnemosyne-store /garage node connect ^<OTHER_ID^>@^<OTHER_IP^>:3901
+echo.
 pause
