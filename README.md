@@ -10,6 +10,7 @@
 
 ### 1. Prerequisites
 - Docker & Docker Compose
+  - **Windows Users**: Read our [Windows Setup Guide (Winget)](docs/WINDOWS_SETUP.md).
 - Tailscale (for mesh networking)
 
 ### 2. Setup
