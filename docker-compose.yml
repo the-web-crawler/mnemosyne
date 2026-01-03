@@ -1,0 +1,71 @@
+services:
+  # --- Layer 1: The Nervous System ---
+  tailscale:
+    image: tailscale/tailscale:latest
+    container_name: mnemosyne-net
+    hostname: ${TS_HOSTNAME}
+    environment:
+      - TS_AUTHKEY=${TS_AUTHKEY}
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_USERSPACE=false # Requires privileged mode
+    volumes:
+      - ./ts_state:/var/lib/tailscale
+      - /dev/net/tun:/dev/net/tun # Required for Linux/Tun
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    restart: unless-stopped
+    # Expose WebDAV (8080) and Dashboard (3000) to the host
+    ports:
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:3000:3000"
+
+  # --- Layer 2: The Brain ---
+  garage:
+    image: dxflrs/garage:v0.9
+    container_name: mnemosyne-store
+    restart: unless-stopped
+    # SIDECAR: Share the network stack of Tailscale
+    network_mode: service:tailscale
+    volumes:
+      - ./meta:/var/lib/garage/meta
+      - ./data:/var/lib/garage/data
+      - ./config.toml:/etc/garage.toml
+    environment:
+      - RUST_LOG=info
+
+  # --- Layer 3: The Interface ---
+  rclone:
+    image: rclone/rclone:latest
+    container_name: mnemosyne-mount
+    restart: unless-stopped
+    # SIDECAR: Share network to reach Garage on localhost
+    network_mode: service:tailscale 
+    environment:
+      # Configure Rclone via Env Vars (No config file needed)
+      - RCLONE_CONFIG_ARCHIVE_TYPE=s3
+      - RCLONE_CONFIG_ARCHIVE_PROVIDER=Other
+      - RCLONE_CONFIG_ARCHIVE_ENV_AUTH=false
+      - RCLONE_CONFIG_ARCHIVE_ACCESS_KEY_ID=${TS_HOSTNAME} # Using Hostname as Key ID for simplicity
+      - RCLONE_CONFIG_ARCHIVE_SECRET_ACCESS_KEY=${RPC_SECRET} # Using RPC secret as S3 key for simplicity
+      - RCLONE_CONFIG_ARCHIVE_ENDPOINT=http://127.0.0.1:3900
+      - RCLONE_CONFIG_ARCHIVE_REGION=garage
+      - RCLONE_CONFIG_ARCHIVE_ACL=private
+    # Serve WebDAV on port 8080 (Mapped by Tailscale container above)
+    command: >
+      serve webdav remote:archive 
+      --addr :8080 
+      --vfs-cache-mode full 
+      --vfs-cache-max-size 20G 
+      --vfs-cache-max-age 720h 
+      --dir-cache-time 1000h
+
+  # --- Layer 4: The Management Dashboard ---
+  dashboard:
+    image: arachnida/mnemosyne-dashboard:latest # Custom build
+    container_name: mnemosyne-dash
+    restart: unless-stopped
+    network_mode: service:tailscale
+    environment:
+      - GARAGE_ADMIN_URL=http://127.0.0.1:3903
+      - GARAGE_ADMIN_TOKEN=${ADMIN_TOKEN}
