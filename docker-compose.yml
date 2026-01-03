@@ -29,7 +29,7 @@ services:
     network_mode: service:tailscale
     volumes:
       - ./meta:/var/lib/garage/meta
-      - ./data:/var/lib/garage/data
+      - ${DATA_DIR}:/var/lib/garage/data
       - ./config.toml:/etc/garage.toml
     environment:
       - RUST_LOG=info
@@ -40,7 +40,7 @@ services:
     container_name: mnemosyne-mount
     restart: unless-stopped
     # SIDECAR: Share network to reach Garage on localhost
-    network_mode: service:tailscale 
+    network_mode: service:tailscale
     environment:
       # Configure Rclone via Env Vars (No config file needed)
       - RCLONE_CONFIG_ARCHIVE_TYPE=s3
@@ -53,12 +53,7 @@ services:
       - RCLONE_CONFIG_ARCHIVE_ACL=private
     # Serve WebDAV on port 8080 (Mapped by Tailscale container above)
     command: >
-      serve webdav remote:archive 
-      --addr :8080 
-      --vfs-cache-mode full 
-      --vfs-cache-max-size 20G 
-      --vfs-cache-max-age 720h 
-      --dir-cache-time 1000h
+      serve webdav remote:archive  --addr :8080  --vfs-cache-mode full  --vfs-cache-max-size ${CACHE_SIZE}  --vfs-cache-max-age ${CACHE_AGE}  --dir-cache-time 1000h
 
   # --- Layer 4: The Management Dashboard ---
   dashboard:
