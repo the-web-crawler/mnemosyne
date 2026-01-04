@@ -64,11 +64,9 @@ export async function getClusterStatus(): Promise<ClusterStatus> {
 
         // Map Garage response (v1.0.0 /health) to our UI model
         const nodes: NodeStatus[] = (statusData.nodes || []).map((n: any) => {
-            // Use actual disk space available
-            const diskAvailable = n.dataPartition?.available || 0;
-            const diskTotal = n.dataPartition?.total || 0;
-            const diskUsed = diskTotal - diskAvailable;
-            const assignedCapacity = n.role?.capacity || 0;
+            // Use Garage-allocated capacity, not system disk
+            const allocatedCapacity = n.role?.capacity || 0;
+            const isOnline = n.isUp === true;
 
             // Format storage string (e.g. "10 GB")
             const formatBytes = (bytes: number) => {
@@ -79,16 +77,20 @@ export async function getClusterStatus(): Promise<ClusterStatus> {
                 return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
             };
 
-            // Calculate usage percentage (disk used / disk total)
-            const usagePercent = diskTotal > 0 ? Math.round((diskUsed / diskTotal) * 100) : 0;
+            // For Garage storage, show allocated capacity
+            const storageDisplay = isOnline && allocatedCapacity > 0
+                ? `${formatBytes(allocatedCapacity)} allocated`
+                : 'N/A';
 
             return {
                 id: n.id,
                 hostname: n.hostname || "Unknown",
-                is_up: n.isUp === true,
+                is_up: isOnline,
                 last_seen: n.lastSeenSecsAgo !== null ? Date.now() - (n.lastSeenSecsAgo * 1000) : Date.now(),
-                usagePercent,
-                storageUsed: `${formatBytes(diskAvailable)} free`
+                // Usage will be calculated from bucket data later
+                usagePercent: 0,
+                storageUsed: storageDisplay,
+                allocatedBytes: allocatedCapacity
             };
         });
 
