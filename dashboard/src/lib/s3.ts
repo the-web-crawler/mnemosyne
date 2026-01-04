@@ -39,6 +39,12 @@ export async function listFiles(prefix: string = ""): Promise<FileItem[]> {
     });
 
     const response = await s3.send(command);
+    console.log("[S3] listFiles response:", {
+        prefix: normalizedPrefix,
+        contents: response.Contents?.length || 0,
+        commonPrefixes: response.CommonPrefixes?.length || 0,
+        keyCount: response.KeyCount
+    });
     const items: FileItem[] = [];
 
     // Add folders (CommonPrefixes)
@@ -111,17 +117,7 @@ export async function uploadFile(path: string, body: Buffer | Uint8Array | strin
         ContentType: contentType || guessMimeType(path),
     });
 
-    try {
-        await s3.send(command);
-    } catch (error: any) {
-        // Garage sometimes throws ServiceUnavailable during background sync
-        // but the write actually succeeds on available nodes
-        if (error.Code === "ServiceUnavailable" || error.name === "ServiceUnavailable") {
-            console.warn(`[S3] Background sync warning for ${path} - write likely succeeded`);
-            return; // Treat as success
-        }
-        throw error;
-    }
+    await s3.send(command);
 }
 
 // Move file to trash (soft delete) - resilient to background sync errors

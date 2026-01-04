@@ -46,24 +46,36 @@ export default function ExplorerPage() {
     const [uploadOpen, setUploadOpen] = useState(false);
     const [editorFile, setEditorFile] = useState<FileItem | null>(null);
 
-    // Load files
-    const loadFiles = useCallback(async () => {
-        setLoading(true);
+    // Load files - only update state if content actually changed
+    const loadFiles = useCallback(async (showLoading = false) => {
+        if (showLoading) setLoading(true);
         try {
             const res = await fetch(`/api/files?path=${encodeURIComponent(currentPath)}`);
             const data = await res.json();
-            setFiles(data.files || []);
+            const newFiles = data.files || [];
+
+            // Only update if the file list actually changed (prevents flashing)
+            setFiles(prevFiles => {
+                // Compare by serializing - simple but effective
+                const prevJson = JSON.stringify(prevFiles.map(f => f.path).sort());
+                const newJson = JSON.stringify(newFiles.map((f: FileItem) => f.path).sort());
+
+                if (prevJson === newJson) {
+                    return prevFiles; // No change - keep existing state
+                }
+                return newFiles;
+            });
         } catch (err) {
             console.error("Failed to load files:", err);
         } finally {
-            setLoading(false);
+            if (showLoading) setLoading(false);
         }
     }, [currentPath]);
 
-    // Initial load and auto-refresh every 10 seconds
+    // Initial load (with loading indicator) and silent auto-refresh every 10 seconds
     useEffect(() => {
-        loadFiles();
-        const interval = setInterval(loadFiles, 10000);
+        loadFiles(true); // Initial load shows loading state
+        const interval = setInterval(() => loadFiles(false), 10000); // Auto-refresh is silent
         return () => clearInterval(interval);
     }, [loadFiles]);
 
@@ -141,7 +153,7 @@ export default function ExplorerPage() {
 
         setSelectedFiles(new Set());
         setContextMenu(null);
-        loadFiles();
+        loadFiles(true);
     };
 
     // Download file
@@ -224,7 +236,7 @@ export default function ExplorerPage() {
             items.push({ icon: FolderPlus, label: "New Folder", onClick: () => { /* TODO */ setContextMenu(null); } });
             items.push({ icon: FilePlus, label: "New Document", onClick: () => { /* TODO */ setContextMenu(null); } });
             items.push({ divider: true });
-            items.push({ icon: RefreshCw, label: "Refresh", onClick: () => { loadFiles(); setContextMenu(null); } });
+            items.push({ icon: RefreshCw, label: "Refresh", onClick: () => { loadFiles(true); setContextMenu(null); } });
         }
 
         return items;
@@ -274,7 +286,7 @@ export default function ExplorerPage() {
                         </div>
 
                         <button
-                            onClick={loadFiles}
+                            onClick={() => loadFiles(true)}
                             className="p-2 glass-panel glass-panel-hover rounded-lg"
                             title="Refresh"
                         >
