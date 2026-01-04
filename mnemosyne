@@ -12,6 +12,9 @@ ARG2=$3
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$PROJECT_DIR"
 
+# Get Git SHA for versioning
+export COMMIT_SHA=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+
 # ANSI Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -466,6 +469,9 @@ case "$CMD" in
             echo "Fetching latest code..."
             git fetch origin
             git reset --hard origin/master
+            
+            # Update SHA
+            export COMMIT_SHA=$(git rev-parse HEAD)
             
             echo "Rebuilding and restarting containers..."
             docker compose down
