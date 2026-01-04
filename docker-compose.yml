@@ -55,7 +55,10 @@ services:
     command: >
       serve webdav archive:  --addr :8080  --vfs-cache-mode full  --vfs-cache-max-size ${CACHE_SIZE}  --vfs-cache-max-age ${CACHE_AGE}  --dir-cache-time 10s
   dashboard:
-    build: ./dashboard
+    build:
+      context: ./dashboard
+      args:
+        - NEXT_PUBLIC_COMMIT_SHA=${COMMIT_SHA}
     container_name: mnemosyne-dash
     restart: unless-stopped
     network_mode: service:tailscale
