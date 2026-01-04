@@ -81,6 +81,15 @@ else
 fi
 echo ""
 
+# S3_KEYS
+echo -e "${GREEN}[6/6] Cluster S3 Credentials${NC}"
+echo "Required for Rclone to sync files."
+echo "- PRIMARY NODE: Leave blank (You will generate these later)."
+echo "- SECONDARY NODE: Paste the keys from your primary node's .env file."
+read -p "Enter S3_ACCESS_KEY_ID: " S3_ACCESS_KEY_ID
+read -p "Enter S3_SECRET_ACCESS_KEY: " S3_SECRET_ACCESS_KEY
+echo ""
+
 # 3. Apply Configuration
 
 echo -e "${CYAN}Applying configuration...${NC}"
@@ -104,6 +113,10 @@ sed "s|ADMIN_TOKEN=.*|ADMIN_TOKEN=$ADMIN_TOKEN|g" .env > .env.tmp && mv .env.tmp
 sed "s|TS_HOSTNAME=.*|TS_HOSTNAME=$TS_HOSTNAME|g" .env > .env.tmp && mv .env.tmp .env
 sed "s|TS_AUTHKEY=.*|TS_AUTHKEY=$TS_AUTHKEY|g" .env > .env.tmp && mv .env.tmp .env
 sed "s|DATA_DIR=.*|DATA_DIR=$DATA_DIR|g" .env > .env.tmp && mv .env.tmp .env
+if [ ! -z "$S3_ACCESS_KEY_ID" ]; then
+    sed "s|S3_ACCESS_KEY_ID=.*|S3_ACCESS_KEY_ID=$S3_ACCESS_KEY_ID|g" .env > .env.tmp && mv .env.tmp .env
+    sed "s|S3_SECRET_ACCESS_KEY=.*|S3_SECRET_ACCESS_KEY=$S3_SECRET_ACCESS_KEY|g" .env > .env.tmp && mv .env.tmp .env
+fi
 
 echo -e "Updated ${GREEN}.env${NC}"
 

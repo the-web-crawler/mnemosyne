@@ -30,6 +30,7 @@
    - **`ADMIN_TOKEN`**: Leave blank to generate.
    - **`TS_AUTHKEY`**: [Generate here](https://login.tailscale.com/admin/settings/keys).
    - **`DATA_DIR`**: Location for Vault data.
+   - **`S3_KEYS`**: (Secondary Nodes Only) Copy from primary node's `.env`.
    - **`TS_IP`**: The Tailscale IP of the current node (fixes connectivity).
 
 3. **(Optional) Verify Config**:

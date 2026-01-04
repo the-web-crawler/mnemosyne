@@ -56,6 +56,15 @@ set /p DATA_DIR="Enter DATA_DIR: "
 if "%DATA_DIR%"=="" set DATA_DIR=./data
 echo.
 
+:: 6. S3_KEYS
+echo [6/6] Cluster S3 Credentials
+echo Required for Rclone.
+echo - PRIMARY NODE: Leave blank.
+echo - SECONDARY NODE: Paste from primary node .env.
+set /p S3_ACCESS_KEY_ID="Enter S3_ACCESS_KEY_ID: "
+set /p S3_SECRET_ACCESS_KEY="Enter S3_SECRET_ACCESS_KEY: "
+echo.
+
 echo Applying configuration...
 
 :: Copy .env
@@ -67,6 +76,11 @@ powershell -Command "(Get-Content .env) -replace 'ADMIN_TOKEN=.*', 'ADMIN_TOKEN=
 powershell -Command "(Get-Content .env) -replace 'TS_HOSTNAME=.*', 'TS_HOSTNAME=%TS_HOSTNAME%' | Set-Content .env"
 powershell -Command "(Get-Content .env) -replace 'TS_AUTHKEY=.*', 'TS_AUTHKEY=%TS_AUTHKEY%' | Set-Content .env"
 powershell -Command "(Get-Content .env) -replace 'DATA_DIR=.*', 'DATA_DIR=%DATA_DIR%' | Set-Content .env"
+
+if not "%S3_ACCESS_KEY_ID%"=="" (
+    powershell -Command "(Get-Content .env) -replace 'S3_ACCESS_KEY_ID=.*', 'S3_ACCESS_KEY_ID=%S3_ACCESS_KEY_ID%' | Set-Content .env"
+    powershell -Command "(Get-Content .env) -replace 'S3_SECRET_ACCESS_KEY=.*', 'S3_SECRET_ACCESS_KEY=%S3_SECRET_ACCESS_KEY%' | Set-Content .env"
+)
 
 echo Updated .env
 
