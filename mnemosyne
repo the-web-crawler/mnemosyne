@@ -36,8 +36,8 @@ do_unmount() {
              fi
          fi
     else
-        # Auto-detect all mnemosyne mounts
-        MOUNT_POINTS=$(mount | grep "localhost:8080/archive" | awk '{print $3}')
+        # Auto-detect all mnemosyne mounts (Look for port 8080)
+        MOUNT_POINTS=$(mount | grep "localhost:8080" | awk '{print $3}')
         for MP in $MOUNT_POINTS; do
             echo "Auto-unmounting: $MP"
             if ! sudo umount "$MP"; then
@@ -57,8 +57,8 @@ do_remount() {
             wait_for_port 8080
             
             echo "Restoring mount at $MP..."
-            # Use the optimized mount flags (Removed cache_size 0 config generation for stability)
-            sudo mount -t davfs -o uid=$(id -un),gid=$(id -gn),use_locks=0 http://localhost:8080/archive "$MP"
+            # Stability Fix: Mount Root (/) instead of /archive to avoid 405 errors
+            sudo mount -t davfs -o uid=$(id -un),gid=$(id -gn),use_locks=0 http://localhost:8080/ "$MP"
         fi
     done
 }
@@ -90,7 +90,7 @@ case "$CMD" in
         ;;
     restart)
         # Capture current mounts before we kill them
-        DETECTED_MOUNTS=$(mount | grep "localhost:8080/archive" | awk '{print $3}')
+        DETECTED_MOUNTS=$(mount | grep "localhost:8080" | awk '{print $3}')
         
         echo "Restarting Mnemosyne..."
         do_unmount
@@ -118,9 +118,10 @@ case "$CMD" in
         # Stability Fix: Removed aggressive ~/.davfs2/davfs2.conf generation.
         # We rely on CLI flags and default caching for better compatibility.
         
-        echo "Mounting http://localhost:8080/archive to $ARG..."
+        echo "Mounting http://localhost:8080/ to $ARG..."
         wait_for_port 8080
-        sudo mount -t davfs -o uid=$(id -un),gid=$(id -gn),use_locks=0 http://localhost:8080/archive "$ARG"
+        # Mount Root to avoid 405 errors on subpaths
+        sudo mount -t davfs -o uid=$(id -un),gid=$(id -gn),use_locks=0 http://localhost:8080/ "$ARG"
         echo "Success! Mounted at $ARG"
         ;;
     unmount)
@@ -133,7 +134,7 @@ case "$CMD" in
         read -p "Are you sure? (y/N) " CONFIRM
         if [[ "$CONFIRM" =~ ^[Yy]$ ]]; then
             # Capture mounts
-            DETECTED_MOUNTS=$(mount | grep "localhost:8080/archive" | awk '{print $3}')
+            DETECTED_MOUNTS=$(mount | grep "localhost:8080" | awk '{print $3}')
             
             echo "Unmounting before update..."
             do_unmount
