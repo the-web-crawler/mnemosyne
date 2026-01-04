@@ -30,14 +30,20 @@ do_unmount() {
     if [ -n "$TARGET" ]; then
          if mount | grep -q "$TARGET"; then
              echo "Unmounting $TARGET..."
-             sudo umount "$TARGET"
+             if ! sudo umount "$TARGET"; then
+                 echo "Standard unmount failed. Forcing lazy unmount..."
+                 sudo umount -l "$TARGET"
+             fi
          fi
     else
         # Auto-detect all mnemosyne mounts
         MOUNT_POINTS=$(mount | grep "localhost:8080/archive" | awk '{print $3}')
         for MP in $MOUNT_POINTS; do
             echo "Auto-unmounting: $MP"
-            sudo umount "$MP"
+            if ! sudo umount "$MP"; then
+                echo "Standard unmount failed. Forcing lazy unmount ($MP)..."
+                sudo umount -l "$MP"
+            fi
         done
     fi
 }
@@ -51,7 +57,7 @@ do_remount() {
             wait_for_port 8080
             
             echo "Restoring mount at $MP..."
-            # Use the optimized mount flags
+            # Use the optimized mount flags (Removed cache_size 0 config generation for stability)
             sudo mount -t davfs -o uid=$(id -un),gid=$(id -gn),use_locks=0 http://localhost:8080/archive "$MP"
         fi
     done
@@ -108,23 +114,14 @@ case "$CMD" in
 
         echo "Creating mount point at $ARG..."
         sudo mkdir -p "$ARG"
-
-        # OPTIMIZATION: Configure davfs2 for "Real-Time" Sync (No Caching)
-        mkdir -p "$HOME/.davfs2"
-        CONF_FILE="$HOME/.davfs2/davfs2.conf"
         
-        if [ ! -f "$CONF_FILE" ]; then
-            echo "Creating optimized davfs2 config at $CONF_FILE..."
-            echo "cache_size 0" > "$CONF_FILE"
-            echo "delay_upload 0" >> "$CONF_FILE"
-            echo "use_locks 0" >> "$CONF_FILE" 
-            echo "gui_optimize 1" >> "$CONF_FILE"
-        fi
+        # Stability Fix: Removed aggressive ~/.davfs2/davfs2.conf generation.
+        # We rely on CLI flags and default caching for better compatibility.
         
         echo "Mounting http://localhost:8080/archive to $ARG..."
         wait_for_port 8080
         sudo mount -t davfs -o uid=$(id -un),gid=$(id -gn),use_locks=0 http://localhost:8080/archive "$ARG"
-        echo "Success! Mounted at $ARG (Cache Optimized)"
+        echo "Success! Mounted at $ARG"
         ;;
     unmount)
         do_unmount "$ARG"
