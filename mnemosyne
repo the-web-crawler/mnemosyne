@@ -35,6 +35,7 @@ show_help() {
     echo "  stop            Stop the cluster (docker compose down)"
     echo "  restart         Restart the cluster"
     echo "  update          Pull latest code and rebuild"
+    echo "  check-update    Check if updates are available (no download)"
     echo ""
     echo -e "${GREEN}Storage Commands:${NC}"
     echo "  mount <path>    Mount the archive to a local folder"
@@ -466,7 +467,8 @@ case "$CMD" in
             git fetch origin
             git reset --hard origin/master
             
-            echo "Rebuilding containers..."
+            echo "Rebuilding and restarting containers..."
+            docker compose down
             docker compose up -d --build --remove-orphans
             
             do_remount "$DETECTED_MOUNTS"
@@ -474,6 +476,33 @@ case "$CMD" in
             echo -e "${GREEN}Update Complete.${NC}"
         else
              echo "Update cancelled."
+        fi
+        ;;
+    check-update)
+        # Lightweight update check - just compares commits without downloading
+        echo "Checking for updates..."
+        git fetch origin --quiet 2>/dev/null
+        
+        LOCAL=$(git rev-parse HEAD 2>/dev/null)
+        REMOTE=$(git rev-parse origin/master 2>/dev/null)
+        
+        if [ -z "$LOCAL" ] || [ -z "$REMOTE" ]; then
+            echo -e "${RED}Error: Could not check for updates (git issue)${NC}"
+            exit 1
+        fi
+        
+        if [ "$LOCAL" = "$REMOTE" ]; then
+            echo -e "${GREEN}✓ Already up to date${NC} (${LOCAL:0:8})"
+            exit 0
+        else
+            # Count commits behind
+            BEHIND=$(git rev-list --count HEAD..origin/master 2>/dev/null || echo "?")
+            echo -e "${YELLOW}⚠ Update available${NC} ($BEHIND commit(s) behind)"
+            echo "  Local:  ${LOCAL:0:8}"
+            echo "  Remote: ${REMOTE:0:8}"
+            echo ""
+            echo "Run './mnemosyne update' to apply."
+            exit 2
         fi
         ;;
     status)
