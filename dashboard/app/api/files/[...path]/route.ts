@@ -42,14 +42,24 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         const filePath = pathSegments.join("/");
 
         const contentType = request.headers.get("content-type") || "application/octet-stream";
-        const bodyBuffer = await request.arrayBuffer();
 
-        await uploadFile(filePath, new Uint8Array(bodyBuffer), contentType);
+        // Use streaming upload to handle large files better (multipart)
+        // and avoid loading entire file into memory
+        if (request.body) {
+            // Need to convert Web ReadableStream to Node stream or pass directly
+            // @aws-sdk/lib-storage handles Web Streams
+            const { uploadFileStream } = require("@/src/lib/s3");
+            await uploadFileStream(filePath, request.body, contentType);
+        } else {
+            // Fallback for empty body
+            const { uploadFile } = require("@/src/lib/s3");
+            await uploadFile(filePath, new Uint8Array(0), contentType);
+        }
 
         return NextResponse.json({ success: true, path: filePath });
-    } catch (error) {
+    } catch (error: any) {
         console.error("[API PUT file] Error:", error);
-        return NextResponse.json({ error: "Failed to upload file" }, { status: 500 });
+        return NextResponse.json({ error: error.message || "Failed to upload file" }, { status: 500 });
     }
 }
 

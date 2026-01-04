@@ -120,6 +120,28 @@ export async function uploadFile(path: string, body: Buffer | Uint8Array | strin
     await s3.send(command);
 }
 
+// Upload streaming data (for large files)
+export async function uploadFileStream(path: string, body: any, contentType?: string): Promise<void> {
+    const s3 = getS3Client();
+    const { Upload } = require("@aws-sdk/lib-storage");
+
+    const upload = new Upload({
+        client: s3,
+        params: {
+            Bucket: ARCHIVE_BUCKET,
+            Key: path,
+            Body: body,
+            ContentType: contentType || guessMimeType(path),
+        },
+        // Garage/S3 performance tuning
+        queueSize: 4,
+        partSize: 5 * 1024 * 1024, // 5MB parts
+        leavePartsOnError: false, // Clean up on failure
+    });
+
+    await upload.done();
+}
+
 // Move file to trash (soft delete) - resilient to background sync errors
 export async function moveToTrash(path: string): Promise<void> {
     const s3 = getS3Client();
