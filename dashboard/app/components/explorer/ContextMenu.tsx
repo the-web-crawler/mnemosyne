@@ -26,7 +26,7 @@ export function ContextMenu({ x, y, items }: ContextMenuProps) {
 
     return (
         <div
-            className="fixed z-50 glass-panel rounded-lg py-1 shadow-2xl min-w-[180px] animate-in fade-in zoom-in-95 duration-100"
+            className="fixed z-50 bg-gray-900 border border-white/20 rounded-lg py-1 shadow-2xl min-w-[180px] animate-in fade-in zoom-in-95 duration-100"
             style={{ left: adjustedX, top: adjustedY }}
             onClick={(e) => e.stopPropagation()}
         >
@@ -42,8 +42,8 @@ export function ContextMenu({ x, y, items }: ContextMenuProps) {
                         key={index}
                         onClick={item.onClick}
                         className={`w-full px-3 py-2 flex items-center gap-3 text-sm transition-colors ${item.danger
-                                ? "text-red-400 hover:bg-red-500/20"
-                                : "text-gray-300 hover:bg-white/10"
+                            ? "text-red-400 hover:bg-red-500/20"
+                            : "text-gray-300 hover:bg-white/10"
                             }`}
                     >
                         {Icon && <Icon size={16} />}
