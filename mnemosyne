@@ -56,9 +56,16 @@ do_remount() {
             echo "Waiting for WebDAV service..."
             wait_for_port 8080
             
+            # Ensure the root folder exists so Rclone serves it correctly as a collection
+            docker exec mnemosyne-mount rclone mkdir archive:archive >/dev/null 2>&1
+            
             echo "Restoring mount at $MP..."
-            # Stability Fix: Mount Root (/) instead of /archive to avoid 405 errors
-            sudo mount -t davfs -o uid=$(id -un),gid=$(id -gn),use_locks=0 http://localhost:8080/ "$MP"
+            # Revert to /archive but use IPv4 to avoid ambiguity
+            if sudo mount -t davfs -o uid=$(id -un),gid=$(id -gn),use_locks=0 http://127.0.0.1:8080/archive "$MP"; then
+                 echo "Restored."
+            else
+                 echo "Failed to restore mount at $MP"
+            fi
         fi
     done
 }
@@ -115,14 +122,20 @@ case "$CMD" in
         echo "Creating mount point at $ARG..."
         sudo mkdir -p "$ARG"
         
-        # Stability Fix: Removed aggressive ~/.davfs2/davfs2.conf generation.
-        # We rely on CLI flags and default caching for better compatibility.
-        
-        echo "Mounting http://localhost:8080/ to $ARG..."
+        echo "Waiting for WebDAV..."
         wait_for_port 8080
-        # Mount Root to avoid 405 errors on subpaths
-        sudo mount -t davfs -o uid=$(id -un),gid=$(id -gn),use_locks=0 http://localhost:8080/ "$ARG"
-        echo "Success! Mounted at $ARG"
+
+        # Ensure directory exists (Fixes 405 Method Not Allowed if S3 path is virtual)
+        echo "Ensuring remote directory exists..."
+        docker exec mnemosyne-mount rclone mkdir archive:archive >/dev/null 2>&1
+
+        echo "Mounting http://127.0.0.1:8080/archive to $ARG..."
+        if sudo mount -t davfs -o uid=$(id -un),gid=$(id -gn),use_locks=0 http://127.0.0.1:8080/archive "$ARG"; then
+            echo "Success! Mounted at $ARG"
+        else
+            echo "Mount failed. Check logs."
+            exit 1
+        fi
         ;;
     unmount)
         do_unmount "$ARG"
