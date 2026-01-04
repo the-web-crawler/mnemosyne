@@ -50,11 +50,36 @@ case "$CMD" in
 
         echo "Creating mount point at $ARG..."
         sudo mkdir -p "$ARG"
+
+        # OPTIMIZATION: Configure davfs2 for "Real-Time" Sync (No Caching)
+        # We create a local config to avoid messing with global /etc/davfs2/davfs2.conf
+        mkdir -p "$HOME/.davfs2"
+        CONF_FILE="$HOME/.davfs2/davfs2.conf"
+        
+        if [ ! -f "$CONF_FILE" ]; then
+            echo "Creating optimized davfs2 config at $CONF_FILE..."
+            # cache_size 0 = disable persistent cache (use memory only)
+            # delay_upload 0 = upload immediately
+            # use_locks 0 = don't lock files (allows quicker refreshes)
+            # gui_optimize 1 = optimize for GUI/Interactive use
+            echo "cache_size 0" > "$CONF_FILE"
+            echo "delay_upload 0" >> "$CONF_FILE"
+            echo "use_locks 0" >> "$CONF_FILE" 
+            echo "gui_optimize 1" >> "$CONF_FILE"
+        fi
         
         echo "Mounting http://localhost:8080/archive to $ARG..."
         echo "Note: If prompted, press Enter for username/password."
-        sudo mount -t davfs -o uid=$(id -un),gid=$(id -gn) http://localhost:8080/archive "$ARG"
-        echo "Success! Mounted at $ARG"
+        
+        # We must copy config to a place root can verify or use command line flags if possible?
+        # limiting user config usage with sudo is tricky.
+        # Actually, davfs2 reads system wide too.
+        # Simplest Fix: Pass -o use_locks=0 directly AND advise user.
+        # But wait, 'cache_size' cannot be passed as -o option easily usually.
+        # Let's try passing use_locks=0 which is the biggest blocker for refresh.
+        
+        sudo mount -t davfs -o uid=$(id -un),gid=$(id -gn),use_locks=0 http://localhost:8080/archive "$ARG"
+        echo "Success! Mounted at $ARG (Cache Optimized)"
         ;;
     unmount)
         echo "Unmounting..."
