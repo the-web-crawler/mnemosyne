@@ -1,3 +1,5 @@
+import { type NextRequest } from "next/server";
+
 export interface NodeStatus {
     id: string;
     hostname: string;
@@ -39,29 +41,57 @@ export async function getClusterStatus(): Promise<ClusterStatus> {
     });
 
     try {
+        console.log(`[API] Fetching status from ${adminUrl}/v1/status with token ending in ...${token?.slice(-6)}`);
+
         // 1. Fetch Health/Status
-        const statusRes = await fetch(`${adminUrl}/status`, {
+        const statusRes = await fetch(`${adminUrl}/v1/status`, {
             headers: getHeaders(),
             next: { revalidate: 10 } // Cache for 10s
         });
 
+        console.log(`[API] Response Status: ${statusRes.status} ${statusRes.statusText}`);
+
         if (!statusRes.ok) {
+            const txt = await statusRes.text();
+            console.error(`[API] Error Body: ${txt}`);
             throw new Error(`Garage API Error: ${statusRes.status}`);
         }
 
         const statusData = await statusRes.json();
-        // Map Garage response to our UI model
-        // Note: Garage API response structure varies, we adapt based on standard v0.9/v1.0 specs
-        // 'statusData' usually contains 'knownNodes' array.
+        // console.log(`[API] Raw Data:`, JSON.stringify(statusData, null, 2));
 
-        const nodes: NodeStatus[] = (statusData.knownNodes || []).map((n: any) => ({
-            id: n.id,
-            hostname: n.hostname || "Unknown",
-            is_up: n.isUp === true, // Strict check
-            last_seen: n.lastSeen ? n.lastSeen * 1000 : 0, // Garage uses seconds usually
-            usagePercent: 0, // TODO: Real logic from Garage
-            storageUsed: "0 B"
-        }));
+        // Map Garage response (v1.0.0 /health) to our UI model
+        const nodes: NodeStatus[] = (statusData.nodes || []).map((n: any) => {
+            // Priority: Use Assigned Role Capacity -> Fallback to Physical Disk Total
+            const assignedCapacity = n.role?.capacity || 0;
+            const physicalTotal = n.dataPartition?.total || 0;
+
+            // For "Used", Garage v1 /status doesn't give a simple "bytes used" per node easily 
+            // without calculating partition usage.
+            // For now, we will show "Allocated" vs "Physical Free" or just "Allocated".
+            // Let's use Assigned Capacity as the "Total" for the bar.
+
+            const totalForBar = assignedCapacity > 0 ? assignedCapacity : physicalTotal;
+
+            // Format storage string (e.g. "10 GB")
+            const formatBytes = (bytes: number) => {
+                if (bytes === 0) return '0 B';
+                const k = 1024;
+                const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+            };
+
+            return {
+                id: n.id,
+                hostname: n.hostname || "Unknown",
+                is_up: n.isUp === true,
+                last_seen: n.lastSeenSecsAgo !== null ? Date.now() - (n.lastSeenSecsAgo * 1000) : Date.now(),
+                // Show 0% used for now since we don't have accurate 'used' bytes from this endpoint
+                usagePercent: 0,
+                storageUsed: `${formatBytes(totalForBar)} Allocated`
+            };
+        });
 
         const activeNodes = nodes.filter(n => n.is_up).length;
         let clusterState: "healthy" | "degraded" | "offline" = "healthy";
@@ -69,16 +99,25 @@ export async function getClusterStatus(): Promise<ClusterStatus> {
         if (activeNodes === 0) clusterState = "offline";
         else if (activeNodes < nodes.length) clusterState = "degraded";
 
-        // 2. Fetch Storage Info (if available, e.g. from /layout or /health)
-        // For now, we simulate storage totals or fetch from another endpoint if needed.
-        // Garage doesn't have a simple "global used" endpoint, it's per node.
-        // We'll verify this part later, using '1' as a placeholder.
+        // Aggregate Totals
+        // Garage uses raw bytes for capacity
+        const totalBytes = (statusData.nodes || []).reduce((acc: number, curr: any) => {
+            return acc + (curr.role?.capacity || 0);
+        }, 0);
+
+        const formatGlobalBytes = (bytes: number) => {
+            if (bytes === 0) return 'Unknown';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+        };
 
         return {
             status: clusterState,
             node_count: nodes.length,
-            total_storage: "Unknown", // Requires /layout call aggregation
-            used_storage: "Unknown",
+            total_storage: formatGlobalBytes(totalBytes),
+            used_storage: "0 B", // Cannot calculate easily from /status without metrics
             nodes: nodes
         };
 

@@ -64,7 +64,7 @@
    # Replace with the OTHER node's ID and IP
    docker exec -it mnemosyne-store /garage node connect <NODE_ID>@<NODE_IP>:3901
    ```
-   *Tip: Find Node IDs by running `docker exec mnemosyne-store /garage status` on each machine.*
+   *Tip: You must use the **Full Node ID**. Find it by running `docker exec mnemosyne-store /garage node id` on each machine.*
 
 ## Directory Structure
 
@@ -100,12 +100,51 @@ You cannot set the vault capacity in `.env` because it requires the whole cluste
 
 ```bash
 # 1. Find your Node ID
-docker exec -it mnemosyne-store /garage status
+docker exec mnemosyne-store /garage status
 
 # 2. Assign Capacity (e.g., 50GB for this laptop)
 # Replace <NODE_ID> with the ID from step 1
-docker exec -it mnemosyne-store /garage layout assign -z zone1 -c 50G <NODE_ID>
+# Replace <ZONE> with your location tag (e.g., "dc1" or "home")
+docker exec mnemosyne-store /garage layout assign -z <ZONE> -c 50G <NODE_ID>
 
 # 3. Apply the Change
-docker exec -it mnemosyne-store /garage layout apply --version 1
+docker exec mnemosyne-store /garage layout apply --version 1
 ```
+
+## Accessing Your Files (Mounting)
+
+The "Synced Directory" is served via **WebDAV** on port **8080**. You must "Mount" or "Map" this to access it like a normal folder.
+
+### 🪟 Windows (Map Network Drive)
+1.  Open **File Explorer** -> **This PC**.
+2.  Click **"Map network drive"** (in the top toolbar or right-click menu).
+3.  **Drive**: Select a letter (e.g., `Z:`).
+4.  **Folder**: `http://localhost:8080/archive`
+5.  Check **"Connect using different credentials"**.
+6.  Click **Finish**.
+7.  **Credentials**: 
+    -   **User**: `(Empty)` or `admin`
+    -   **Password**: `(Empty)` (Authentication is handled via Tailscale IP allowlists).
+
+### 🐧 Linux (Nautilus/Dolphin)
+1.  Open your File Manager.
+2.  Find **"Other Locations"** or **"Connect to Server"**.
+3.  Enter Server Address: `dav://localhost:8080/archive`
+4.  Click **Connect**.
+
+### 💻 Linux (Command Line / Headless)
+You can use `davfs2` to mount it as a system drive.
+1.  **Install davfs2**: `sudo apt install davfs2` (Debian/Ubuntu)
+2.  **Create Mount Point**: `sudo mkdir -p /mnt/mnemosyne`
+3.  **Mount (with permissions)**:
+    ```bash
+    # Mounts with YOUR user as the owner so you can edit files
+    sudo mount -t davfs -o uid=$(id -un),gid=$(id -gn) http://localhost:8080/archive /mnt/mnemosyne
+    ```
+    *Note: If prompted for credentials, press Enter (or use empty username/password).*
+
+### 🍎 macOS (Finder)
+1.  Open **Finder**.
+2.  Press `Cmd + K` (Connect to Server).
+3.  Server Address: `http://localhost:8080/archive`
+4.  Click **Connect**.
