@@ -64,16 +64,11 @@ export async function getClusterStatus(): Promise<ClusterStatus> {
 
         // Map Garage response (v1.0.0 /health) to our UI model
         const nodes: NodeStatus[] = (statusData.nodes || []).map((n: any) => {
-            // Priority: Use Assigned Role Capacity -> Fallback to Physical Disk Total
+            // Use actual disk space available
+            const diskAvailable = n.dataPartition?.available || 0;
+            const diskTotal = n.dataPartition?.total || 0;
+            const diskUsed = diskTotal - diskAvailable;
             const assignedCapacity = n.role?.capacity || 0;
-            const physicalTotal = n.dataPartition?.total || 0;
-
-            // For "Used", Garage v1 /status doesn't give a simple "bytes used" per node easily 
-            // without calculating partition usage.
-            // For now, we will show "Allocated" vs "Physical Free" or just "Allocated".
-            // Let's use Assigned Capacity as the "Total" for the bar.
-
-            const totalForBar = assignedCapacity > 0 ? assignedCapacity : physicalTotal;
 
             // Format storage string (e.g. "10 GB")
             const formatBytes = (bytes: number) => {
@@ -84,14 +79,16 @@ export async function getClusterStatus(): Promise<ClusterStatus> {
                 return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
             };
 
+            // Calculate usage percentage (disk used / disk total)
+            const usagePercent = diskTotal > 0 ? Math.round((diskUsed / diskTotal) * 100) : 0;
+
             return {
                 id: n.id,
                 hostname: n.hostname || "Unknown",
                 is_up: n.isUp === true,
                 last_seen: n.lastSeenSecsAgo !== null ? Date.now() - (n.lastSeenSecsAgo * 1000) : Date.now(),
-                // Show 0% used for now since we don't have accurate 'used' bytes from this endpoint
-                usagePercent: 0,
-                storageUsed: `${formatBytes(totalForBar)} Allocated`
+                usagePercent,
+                storageUsed: `${formatBytes(diskAvailable)} free`
             };
         });
 

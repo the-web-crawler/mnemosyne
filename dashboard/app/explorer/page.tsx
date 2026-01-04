@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { FileGrid } from "../components/explorer/FileGrid";
 import { Breadcrumb } from "../components/explorer/Breadcrumb";
 import { ContextMenu, MenuItem } from "../components/explorer/ContextMenu";
@@ -17,7 +18,8 @@ import {
     Download,
     Edit,
     Pin,
-    PinOff
+    PinOff,
+    ArrowLeft
 } from "lucide-react";
 
 export interface FileItem {
@@ -233,9 +235,18 @@ export default function ExplorerPage() {
             <div className="max-w-6xl mx-auto">
                 {/* Header */}
                 <header className="flex items-center justify-between mb-6">
-                    <div>
-                        <h1 className="text-2xl font-bold text-white mb-1">File Explorer</h1>
-                        <Breadcrumb path={currentPath} onNavigate={navigateTo} />
+                    <div className="flex items-center gap-4">
+                        <Link
+                            href="/"
+                            className="p-2 glass-panel glass-panel-hover rounded-lg"
+                            title="Back to Dashboard"
+                        >
+                            <ArrowLeft size={20} />
+                        </Link>
+                        <div>
+                            <h1 className="text-2xl font-bold text-white mb-1">File Explorer</h1>
+                            <Breadcrumb path={currentPath} onNavigate={navigateTo} />
+                        </div>
                     </div>
 
                     <div className="flex items-center gap-2">
