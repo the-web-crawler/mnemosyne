@@ -22,6 +22,26 @@ show_help() {
     echo ""
 }
 
+# Helper: Unmount safely
+do_unmount() {
+    # Check if a specific path was given via ARG (global), otherwise auto-detect
+    TARGET="$1"
+    
+    if [ -n "$TARGET" ]; then
+         if mount | grep -q "$TARGET"; then
+             echo "Unmounting $TARGET..."
+             sudo umount "$TARGET"
+         fi
+    else
+        # Auto-detect all mnemosyne mounts
+        MOUNT_POINTS=$(mount | grep "localhost:8080/archive" | awk '{print $3}')
+        for MP in $MOUNT_POINTS; do
+            echo "Auto-unmounting: $MP"
+            sudo umount "$MP"
+        done
+    fi
+}
+
 case "$CMD" in
     start)
         echo "Starting Mnemosyne..."
@@ -29,10 +49,12 @@ case "$CMD" in
         ;;
     stop)
         echo "Stopping Mnemosyne..."
+        do_unmount
         docker compose down
         ;;
     restart)
         echo "Restarting Mnemosyne..."
+        do_unmount
         docker compose restart
         ;;
     mount)
@@ -52,16 +74,11 @@ case "$CMD" in
         sudo mkdir -p "$ARG"
 
         # OPTIMIZATION: Configure davfs2 for "Real-Time" Sync (No Caching)
-        # We create a local config to avoid messing with global /etc/davfs2/davfs2.conf
         mkdir -p "$HOME/.davfs2"
         CONF_FILE="$HOME/.davfs2/davfs2.conf"
         
         if [ ! -f "$CONF_FILE" ]; then
             echo "Creating optimized davfs2 config at $CONF_FILE..."
-            # cache_size 0 = disable persistent cache (use memory only)
-            # delay_upload 0 = upload immediately
-            # use_locks 0 = don't lock files (allows quicker refreshes)
-            # gui_optimize 1 = optimize for GUI/Interactive use
             echo "cache_size 0" > "$CONF_FILE"
             echo "delay_upload 0" >> "$CONF_FILE"
             echo "use_locks 0" >> "$CONF_FILE" 
@@ -69,39 +86,12 @@ case "$CMD" in
         fi
         
         echo "Mounting http://localhost:8080/archive to $ARG..."
-        echo "Note: If prompted, press Enter for username/password."
-        
-        # We must copy config to a place root can verify or use command line flags if possible?
-        # limiting user config usage with sudo is tricky.
-        # Actually, davfs2 reads system wide too.
-        # Simplest Fix: Pass -o use_locks=0 directly AND advise user.
-        # But wait, 'cache_size' cannot be passed as -o option easily usually.
-        # Let's try passing use_locks=0 which is the biggest blocker for refresh.
-        
         sudo mount -t davfs -o uid=$(id -un),gid=$(id -gn),use_locks=0 http://localhost:8080/archive "$ARG"
         echo "Success! Mounted at $ARG (Cache Optimized)"
         ;;
     unmount)
-        echo "Unmounting..."
-        # Try finding where it is mounted if user didn't specify? 
-        # For simplicity, we assume user knows or we unmount by device URL logic, 
-        # but let's just ask 'umount -a' or expect user to pass dir.
-        # Actually, let's just try to unmount the known URL if possible, 
-        # or require an arg if provided.
-        
-        if [ -n "$ARG" ]; then
-             sudo umount "$ARG"
-        else
-            echo "Searching for Mnemosyne mounts..."
-            MOUNT_POINT=$(mount | grep "localhost:8080/archive" | awk '{print $3}')
-            if [ -n "$MOUNT_POINT" ]; then
-                echo "Found mount at: $MOUNT_POINT"
-                sudo umount "$MOUNT_POINT"
-                echo "Unmounted."
-            else
-                echo "No active Mnemosyne mounts found."
-            fi
-        fi
+        do_unmount "$ARG"
+        echo "Done."
         ;;
     update)
         echo "WARNING: This will RESET your local code to match the remote repository."
