@@ -10,9 +10,7 @@
 
 ### 1. Prerequisites
 - Docker & Docker Compose
-  - **Windows Users**: 
-    - Option A: [Windows Setup Guide (Winget)](docs/WINDOWS_SETUP.md) (Standard)
-    - Option B: [Pure WSL (Recommended if Docker fails)](docs/WSL_SETUP.md) (Robust)
+  - **Windows Users**: Read our [Windows Setup Guide](docs/WINDOWS_SETUP.md) (covers Winget & WSL).
 - Tailscale (for mesh networking)
 
 ### 2. Setup
