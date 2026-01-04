@@ -125,16 +125,21 @@ export async function getClusterStatus(): Promise<ClusterStatus> {
         // Fetch bucket info to get actual used storage
         let usedBytes = 0;
         try {
-            const bucketRes = await fetch(`${adminUrl}/v1/bucket?id=archive`, {
+            // Use globalAlias param to query by bucket name
+            const bucketRes = await fetch(`${adminUrl}/v1/bucket?globalAlias=archive`, {
                 headers: getHeaders(),
                 next: { revalidate: 10 }
             });
             if (bucketRes.ok) {
                 const bucketData = await bucketRes.json();
+                // Garage returns bytes in the bucket info
                 usedBytes = bucketData.bytes || 0;
+                console.log("[API] Bucket info:", { bytes: bucketData.bytes, objects: bucketData.objects });
+            } else {
+                console.warn("[API] Bucket API returned:", bucketRes.status);
             }
-        } catch (e) {
-            console.warn("[API] Could not fetch bucket info for used storage");
+        } catch (e: any) {
+            console.warn("[API] Could not fetch bucket info:", e.message);
         }
 
         return {

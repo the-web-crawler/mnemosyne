@@ -58,8 +58,11 @@ export default function ExplorerPage() {
         }
     }, [currentPath]);
 
+    // Initial load and auto-refresh every 10 seconds
     useEffect(() => {
         loadFiles();
+        const interval = setInterval(loadFiles, 10000);
+        return () => clearInterval(interval);
     }, [loadFiles]);
 
     // Load pinned files from localStorage
