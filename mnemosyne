@@ -1,73 +1,76 @@
 #!/bin/bash
 
 # mnemosyne - CLI wrapper for Mnemosyne Cluster Management
+# Designed for resilience and data preservation
+
+set -o pipefail
 
 CMD=$1
 ARG=$2
+ARG2=$3
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$PROJECT_DIR"
 
+# ANSI Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
+# Configuration
+TRASH_BUCKET="archive-trash"
+TRASH_RETENTION_DAYS=30
+ARCHIVE_BUCKET="archive"
+
 show_help() {
+    echo -e "${CYAN}Mnemosyne - Distributed Archive CLI${NC}"
+    echo ""
     echo "Usage: ./mnemosyne <command> [args]"
     echo ""
-    echo "Commands:"
+    echo -e "${GREEN}Core Commands:${NC}"
     echo "  start           Start the cluster (docker compose up -d)"
     echo "  stop            Stop the cluster (docker compose down)"
     echo "  restart         Restart the cluster"
-    echo "  mount <path>    Mount the WebDAV share to a local folder"
-    echo "  unmount         Unmount the WebDAV share"
-    echo "  update          Pull latest code (RESET hard) and rebuild"
-    echo "  logs <service>  View logs (optional: service name)"
+    echo "  update          Pull latest code and rebuild"
+    echo ""
+    echo -e "${GREEN}Storage Commands:${NC}"
+    echo "  mount <path>    Mount the archive to a local folder"
+    echo "  unmount         Unmount the archive"
+    echo "  ls [path]       List files in archive (default: root)"
+    echo ""
+    echo -e "${GREEN}Resilience Commands:${NC}"
+    echo "  status          Show cluster health and node status"
+    echo "  health          Quick health check (exit 0=healthy, 1=unhealthy)"
+    echo "  repair          Run cluster repair operations"
+    echo "  reconnect       Attempt to reconnect disconnected nodes"
+    echo ""
+    echo -e "${GREEN}Trash/Recovery Commands:${NC}"
+    echo "  trash ls        List files in trash"
+    echo "  trash restore <file>   Restore a file from trash"
+    echo "  trash empty     Permanently delete old trash (>${TRASH_RETENTION_DAYS} days)"
+    echo ""
+    echo -e "${GREEN}Diagnostic Commands:${NC}"
+    echo "  logs [service]  View logs (optional: service name)"
+    echo "  diag            Run full diagnostic check"
     echo ""
 }
 
-# Helper: Unmount safely
-do_unmount() {
-    # Check if a specific path was given via ARG (global), otherwise auto-detect
-    TARGET="$1"
-    
-    if [ -n "$TARGET" ]; then
-         if mount | grep -q "$TARGET"; then
-             echo "Unmounting $TARGET..."
-             if ! sudo umount "$TARGET"; then
-                 echo "Standard unmount failed. Forcing lazy unmount..."
-                 sudo umount -l "$TARGET"
-             fi
-         fi
-    else
-        # Auto-detect all mnemosyne mounts (Look for port 8080)
-        MOUNT_POINTS=$(mount | grep "localhost:8080" | awk '{print $3}')
-        for MP in $MOUNT_POINTS; do
-            echo "Auto-unmounting: $MP"
-            if ! sudo umount "$MP"; then
-                echo "Standard unmount failed. Forcing lazy unmount ($MP)..."
-                sudo umount -l "$MP"
-            fi
-        done
-    fi
+# Helper: Check if container is running
+container_running() {
+    docker inspect -f '{{.State.Running}}' "$1" 2>/dev/null | grep -q 'true'
 }
 
-# Helper: Remount paths (passed as space-separated string)
-do_remount() {
-    MOUNTS="$1"
-    for MP in $MOUNTS; do
-        if [ -n "$MP" ]; then
-            echo "Waiting for WebDAV service..."
-            wait_for_port 8080
-            
-            # Ensure the root folder exists so Rclone serves it correctly as a collection
-            docker exec mnemosyne-mount rclone mkdir archive:archive >/dev/null 2>&1
-            
-            echo "Restoring mount at $MP..."
-            # Revert to /archive but use IPv4 to avoid ambiguity
-            if sudo mount -t davfs -o uid=$(id -un),gid=$(id -gn),use_locks=0 http://127.0.0.1:8080/archive "$MP"; then
-                 echo "Restored."
-            else
-                 echo "Failed to restore mount at $MP"
-            fi
-        fi
-    done
+# Helper: Execute garage command
+garage_exec() {
+    docker exec mnemosyne-store /garage "$@" 2>&1
+}
+
+# Helper: Execute rclone command
+rclone_exec() {
+    docker exec mnemosyne-mount rclone "$@" 2>&1 | grep -v "NOTICE: Config file"
 }
 
 # Helper: Wait for a port to be open (up to 30s)
@@ -85,6 +88,318 @@ wait_for_port() {
     return 1
 }
 
+# Helper: Unmount safely
+do_unmount() {
+    TARGET="$1"
+    
+    if [ -n "$TARGET" ]; then
+         if mount | grep -q "$TARGET"; then
+             echo "Unmounting $TARGET..."
+             if ! sudo umount "$TARGET"; then
+                 echo "Standard unmount failed. Forcing lazy unmount..."
+                 sudo umount -l "$TARGET"
+             fi
+         fi
+    else
+        MOUNT_POINTS=$(mount | grep "localhost:8080" | awk '{print $3}')
+        for MP in $MOUNT_POINTS; do
+            echo "Auto-unmounting: $MP"
+            if ! sudo umount "$MP"; then
+                echo "Standard unmount failed. Forcing lazy unmount ($MP)..."
+                sudo umount -l "$MP"
+            fi
+        done
+    fi
+}
+
+# Helper: Remount paths
+do_remount() {
+    MOUNTS="$1"
+    for MP in $MOUNTS; do
+        if [ -n "$MP" ]; then
+            echo "Waiting for WebDAV service..."
+            wait_for_port 8080
+            
+            docker exec mnemosyne-mount rclone mkdir archive:archive >/dev/null 2>&1
+            
+            echo "Restoring mount at $MP..."
+            if sudo mount -t davfs -o uid=$(id -un),gid=$(id -gn),use_locks=0 http://127.0.0.1:8080/archive "$MP"; then
+                 echo "Restored."
+            else
+                 echo "Failed to restore mount at $MP"
+            fi
+        fi
+    done
+}
+
+# Helper: Ensure trash bucket exists
+ensure_trash_bucket() {
+    if ! garage_exec bucket list 2>/dev/null | grep -q "$TRASH_BUCKET"; then
+        echo "Creating trash bucket..."
+        garage_exec bucket create "$TRASH_BUCKET" >/dev/null 2>&1
+        # Get key ID from env
+        source "$PROJECT_DIR/.env" 2>/dev/null
+        if [ -n "$S3_ACCESS_KEY_ID" ]; then
+            garage_exec bucket allow --read --write "$TRASH_BUCKET" --key "$S3_ACCESS_KEY_ID" >/dev/null 2>&1
+        fi
+    fi
+}
+
+# Get cluster status in a user-friendly format
+show_status() {
+    echo -e "${CYAN}═══════════════════════════════════════════${NC}"
+    echo -e "${CYAN}         MNEMOSYNE CLUSTER STATUS           ${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════${NC}"
+    echo ""
+    
+    # Check containers
+    echo -e "${BLUE}▸ Container Status${NC}"
+    for container in mnemosyne-net mnemosyne-store mnemosyne-mount mnemosyne-dash; do
+        if container_running "$container"; then
+            echo -e "  ${GREEN}●${NC} $container: Running"
+        else
+            echo -e "  ${RED}●${NC} $container: Stopped"
+        fi
+    done
+    echo ""
+    
+    # Check Garage nodes
+    if container_running mnemosyne-store; then
+        echo -e "${BLUE}▸ Cluster Nodes${NC}"
+        STATUS_OUTPUT=$(garage_exec status 2>/dev/null)
+        
+        # Parse healthy nodes
+        echo "$STATUS_OUTPUT" | grep -A 100 "HEALTHY NODES" | grep -B 100 "FAILED NODES" | \
+            grep -E "^[a-f0-9]{16}" | while read -r line; do
+            NODE_ID=$(echo "$line" | awk '{print $1}')
+            HOSTNAME=$(echo "$line" | awk '{print $2}')
+            CAPACITY=$(echo "$line" | awk '{print $6}')
+            echo -e "  ${GREEN}●${NC} $HOSTNAME ($NODE_ID): ${CAPACITY}"
+        done
+        
+        # Parse failed nodes
+        FAILED=$(echo "$STATUS_OUTPUT" | grep -A 100 "FAILED NODES" | grep -E "^[a-f0-9]{16}" || true)
+        if [ -n "$FAILED" ]; then
+            echo ""
+            echo -e "  ${RED}Failed Nodes:${NC}"
+            echo "$FAILED" | while read -r line; do
+                NODE_ID=$(echo "$line" | awk '{print $1}')
+                LAST_SEEN=$(echo "$line" | awk '{$1=$2=$3=$4=$5=""; print $0}' | xargs)
+                echo -e "  ${RED}●${NC} $NODE_ID: $LAST_SEEN"
+            done
+        fi
+        
+        echo ""
+        
+        # Bucket info
+        echo -e "${BLUE}▸ Storage${NC}"
+        BUCKET_INFO=$(garage_exec bucket info archive 2>/dev/null)
+        SIZE=$(echo "$BUCKET_INFO" | grep "^Size:" | awk '{print $2, $3}')
+        OBJECTS=$(echo "$BUCKET_INFO" | grep "^Objects:" | awk '{print $2}')
+        echo "  Archive: ${SIZE:-0 B}, ${OBJECTS:-0} objects"
+        
+        # Trash bucket
+        TRASH_INFO=$(garage_exec bucket info "$TRASH_BUCKET" 2>/dev/null)
+        if [ -n "$TRASH_INFO" ]; then
+            TRASH_SIZE=$(echo "$TRASH_INFO" | grep "^Size:" | awk '{print $2, $3}')
+            TRASH_OBJECTS=$(echo "$TRASH_INFO" | grep "^Objects:" | awk '{print $2}')
+            echo "  Trash: ${TRASH_SIZE:-0 B}, ${TRASH_OBJECTS:-0} objects"
+        fi
+        echo ""
+        
+        # Layout status
+        echo -e "${BLUE}▸ Layout${NC}"
+        LAYOUT=$(garage_exec layout history 2>/dev/null | grep -E "^#[0-9]" | head -1)
+        if [ -n "$LAYOUT" ]; then
+            VERSION=$(echo "$LAYOUT" | awk '{print $1}')
+            STATUS=$(echo "$LAYOUT" | awk '{print $2}')
+            echo "  Version: $VERSION ($STATUS)"
+        fi
+        
+        # Check for layout issues
+        if echo "$STATUS_OUTPUT" | grep -q "draining metadata"; then
+            echo -e "  ${YELLOW}⚠ Warning: Layout migration in progress${NC}"
+        fi
+    else
+        echo -e "${RED}  Garage container not running. Cannot check cluster status.${NC}"
+    fi
+    
+    echo ""
+    echo -e "${CYAN}═══════════════════════════════════════════${NC}"
+}
+
+# Quick health check (exit code based)
+do_health_check() {
+    local healthy=true
+    
+    # Check all containers
+    for container in mnemosyne-net mnemosyne-store mnemosyne-mount mnemosyne-dash; do
+        if ! container_running "$container"; then
+            echo "Container $container is not running"
+            healthy=false
+        fi
+    done
+    
+    # Check Garage cluster health
+    if container_running mnemosyne-store; then
+        STATUS=$(garage_exec status 2>/dev/null)
+        if echo "$STATUS" | grep -q "FAILED NODES"; then
+            FAILED_COUNT=$(echo "$STATUS" | grep -A 100 "FAILED NODES" | grep -c "^[a-f0-9]" || echo "0")
+            if [ "$FAILED_COUNT" -gt 0 ]; then
+                echo "Warning: $FAILED_COUNT failed node(s) in cluster"
+            fi
+        fi
+        
+        # Check for layout issues
+        if echo "$STATUS" | grep -q "draining metadata\|never seen"; then
+            echo "Warning: Potential layout synchronization issue"
+            healthy=false
+        fi
+    fi
+    
+    # Check WebDAV availability
+    if ! nc -z 127.0.0.1 8080 >/dev/null 2>&1; then
+        echo "WebDAV port 8080 not accessible"
+        healthy=false
+    fi
+    
+    if [ "$healthy" = true ]; then
+        echo "Cluster is healthy"
+        exit 0
+    else
+        exit 1
+    fi
+}
+
+# Run repair operations
+do_repair() {
+    echo -e "${CYAN}Running cluster repair...${NC}"
+    
+    if ! container_running mnemosyne-store; then
+        echo -e "${RED}Error: Garage container not running${NC}"
+        exit 1
+    fi
+    
+    echo "  [1/3] Repairing metadata tables..."
+    garage_exec repair --all-nodes --yes tables 2>&1 | grep -v "INFO" || true
+    
+    echo "  [2/3] Repairing block storage..."
+    garage_exec repair --all-nodes --yes blocks 2>&1 | grep -v "INFO" || true
+    
+    echo "  [3/3] Verifying block integrity..."
+    garage_exec repair --yes scrub 2>&1 | grep -v "INFO" || true
+    
+    echo -e "${GREEN}Repair operations launched.${NC}"
+    echo "Note: Repairs run asynchronously. Check logs for progress."
+}
+
+# Attempt to reconnect nodes
+do_reconnect() {
+    echo -e "${CYAN}Attempting to reconnect nodes...${NC}"
+    
+    if ! container_running mnemosyne-store; then
+        echo -e "${RED}Error: Garage container not running${NC}"
+        exit 1
+    fi
+    
+    # Get current node list and their IPs
+    STATUS=$(garage_exec status 2>/dev/null)
+    
+    # Try to connect to known nodes
+    echo "$STATUS" | grep -E "^[a-f0-9]{16}" | while read -r line; do
+        NODE_ID=$(echo "$line" | awk '{print $1}')
+        ADDR=$(echo "$line" | awk '{print $3}')
+        if [ -n "$ADDR" ] && [ "$ADDR" != "NO" ]; then
+            # Extract full node ID from status
+            FULL_ID=$(garage_exec node id -q 2>/dev/null | head -1)
+            SHORT_ID=$(echo "$FULL_ID" | cut -c1-16)
+            if [ "$SHORT_ID" != "$NODE_ID" ]; then
+                echo "  Connecting to $NODE_ID @ $ADDR..."
+                garage_exec node connect "${NODE_ID}@${ADDR}" 2>&1 | grep -v "INFO" || true
+            fi
+        fi
+    done
+    
+    echo -e "${GREEN}Reconnection attempts complete.${NC}"
+}
+
+# Full diagnostic
+do_diag() {
+    echo -e "${CYAN}═══════════════════════════════════════════${NC}"
+    echo -e "${CYAN}         MNEMOSYNE FULL DIAGNOSTIC          ${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════${NC}"
+    echo ""
+    
+    echo -e "${BLUE}▸ Docker Version${NC}"
+    docker --version
+    echo ""
+    
+    echo -e "${BLUE}▸ Container Status${NC}"
+    docker ps -a --filter "name=mnemosyne" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+    echo ""
+    
+    if container_running mnemosyne-store; then
+        echo -e "${BLUE}▸ Garage Status (Raw)${NC}"
+        garage_exec status 2>/dev/null | grep -v "INFO"
+        echo ""
+        
+        echo -e "${BLUE}▸ Layout History${NC}"
+        garage_exec layout history 2>/dev/null | grep -v "INFO"
+        echo ""
+        
+        echo -e "${BLUE}▸ Bucket List${NC}"
+        garage_exec bucket list 2>/dev/null | grep -v "INFO"
+        echo ""
+    fi
+    
+    if container_running mnemosyne-net; then
+        echo -e "${BLUE}▸ Tailscale Status${NC}"
+        docker exec mnemosyne-net tailscale status 2>/dev/null || echo "Failed to get Tailscale status"
+        echo ""
+    fi
+    
+    echo -e "${BLUE}▸ Network Ports${NC}"
+    echo "  Port 8080 (WebDAV): $(nc -z 127.0.0.1 8080 && echo 'Open' || echo 'Closed')"
+    echo "  Port 3000 (Dashboard): $(nc -z 127.0.0.1 3000 && echo 'Open' || echo 'Closed')"
+    echo ""
+}
+
+# Trash operations
+do_trash() {
+    case "$ARG" in
+        ls)
+            ensure_trash_bucket
+            echo -e "${CYAN}Trash contents:${NC}"
+            rclone_exec ls "archive:$TRASH_BUCKET/" 2>/dev/null || echo "  (empty)"
+            ;;
+        restore)
+            if [ -z "$ARG2" ]; then
+                echo "Usage: ./mnemosyne trash restore <filename>"
+                exit 1
+            fi
+            ensure_trash_bucket
+            echo "Restoring $ARG2 from trash..."
+            # Extract original path from trash filename (format: originalpath_timestamp)
+            ORIG_PATH=$(echo "$ARG2" | sed 's/_[0-9]*$//')
+            rclone_exec copy "archive:$TRASH_BUCKET/$ARG2" "archive:$ARCHIVE_BUCKET/$ORIG_PATH" 2>/dev/null && \
+                echo -e "${GREEN}Restored: $ARG2 -> $ORIG_PATH${NC}" || \
+                echo -e "${RED}Failed to restore $ARG2${NC}"
+            ;;
+        empty)
+            ensure_trash_bucket
+            echo "Removing trash items older than ${TRASH_RETENTION_DAYS} days..."
+            rclone_exec delete "archive:$TRASH_BUCKET/" --min-age "${TRASH_RETENTION_DAYS}d" 2>/dev/null && \
+                echo -e "${GREEN}Old trash items removed.${NC}" || \
+                echo -e "${YELLOW}No items to remove or operation failed.${NC}"
+            ;;
+        *)
+            echo "Usage: ./mnemosyne trash <ls|restore|empty>"
+            exit 1
+            ;;
+    esac
+}
+
+# Main command handler
 case "$CMD" in
     start)
         echo "Starting Mnemosyne..."
@@ -96,24 +411,21 @@ case "$CMD" in
         docker compose down
         ;;
     restart)
-        # Capture current mounts before we kill them
         DETECTED_MOUNTS=$(mount | grep "localhost:8080" | awk '{print $3}')
         
         echo "Restarting Mnemosyne..."
         do_unmount
         docker compose restart
         
-        # Restore mounts
         do_remount "$DETECTED_MOUNTS"
         ;;
     mount)
         if [ -z "$ARG" ]; then
-            echo "Error: details directory required."
+            echo "Error: Mount directory required."
             echo "Usage: ./mnemosyne mount /path/to/folder"
             exit 1
         fi
         
-        # Check for davfs2
         if ! command -v mount.davfs &> /dev/null; then
             echo "Error: davfs2 not installed. Run: sudo apt install davfs2"
             exit 1
@@ -125,15 +437,14 @@ case "$CMD" in
         echo "Waiting for WebDAV..."
         wait_for_port 8080
 
-        # Ensure directory exists (Fixes 405 Method Not Allowed if S3 path is virtual)
         echo "Ensuring remote directory exists..."
         docker exec mnemosyne-mount rclone mkdir archive:archive >/dev/null 2>&1
 
-        echo "Mounting http://127.0.0.1:8080/archive to $ARG..."
+        echo "Mounting to $ARG..."
         if sudo mount -t davfs -o uid=$(id -un),gid=$(id -gn),use_locks=0 http://127.0.0.1:8080/archive "$ARG"; then
-            echo "Success! Mounted at $ARG"
+            echo -e "${GREEN}Success! Mounted at $ARG${NC}"
         else
-            echo "Mount failed. Check logs."
+            echo -e "${RED}Mount failed. Check logs.${NC}"
             exit 1
         fi
         ;;
@@ -142,11 +453,10 @@ case "$CMD" in
         echo "Done."
         ;;
     update)
-        echo "WARNING: This will RESET your local code to match the remote repository."
+        echo -e "${YELLOW}WARNING: This will RESET your local code to match the remote repository.${NC}"
         echo "Your .env and data/ folder will be preserved."
         read -p "Are you sure? (y/N) " CONFIRM
         if [[ "$CONFIRM" =~ ^[Yy]$ ]]; then
-            # Capture mounts
             DETECTED_MOUNTS=$(mount | grep "localhost:8080" | awk '{print $3}')
             
             echo "Unmounting before update..."
@@ -159,13 +469,38 @@ case "$CMD" in
             echo "Rebuilding containers..."
             docker compose up -d --build --remove-orphans
             
-            # Restore mounts
             do_remount "$DETECTED_MOUNTS"
             
-            echo "Update Complete."
+            echo -e "${GREEN}Update Complete.${NC}"
         else
              echo "Update cancelled."
         fi
+        ;;
+    status)
+        show_status
+        ;;
+    health)
+        do_health_check
+        ;;
+    repair)
+        do_repair
+        ;;
+    reconnect)
+        do_reconnect
+        ;;
+    diag)
+        do_diag
+        ;;
+    trash)
+        do_trash
+        ;;
+    ls)
+        if ! container_running mnemosyne-mount; then
+            echo -e "${RED}Error: Rclone container not running${NC}"
+            exit 1
+        fi
+        PATH_ARG="${ARG:-/}"
+        rclone_exec ls "archive:archive/$PATH_ARG" 2>/dev/null
         ;;
     logs)
         if [ -z "$ARG" ]; then
