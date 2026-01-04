@@ -47,11 +47,29 @@ do_remount() {
     MOUNTS="$1"
     for MP in $MOUNTS; do
         if [ -n "$MP" ]; then
+            echo "Waiting for WebDAV service..."
+            wait_for_port 8080
+            
             echo "Restoring mount at $MP..."
             # Use the optimized mount flags
             sudo mount -t davfs -o uid=$(id -un),gid=$(id -gn),use_locks=0 http://localhost:8080/archive "$MP"
         fi
     done
+}
+
+# Helper: Wait for a port to be open (up to 30s)
+wait_for_port() {
+    PORT=$1
+    RETRIES=30
+    while [ $RETRIES -gt 0 ]; do
+        if nc -z 127.0.0.1 $PORT >/dev/null 2>&1; then
+            return 0
+        fi
+        sleep 1
+        RETRIES=$((RETRIES-1))
+    done
+    echo "Warning: Port $PORT did not open in time."
+    return 1
 }
 
 case "$CMD" in
@@ -104,6 +122,7 @@ case "$CMD" in
         fi
         
         echo "Mounting http://localhost:8080/archive to $ARG..."
+        wait_for_port 8080
         sudo mount -t davfs -o uid=$(id -un),gid=$(id -gn),use_locks=0 http://localhost:8080/archive "$ARG"
         echo "Success! Mounted at $ARG (Cache Optimized)"
         ;;
