@@ -60,8 +60,10 @@ export default async function Home() {
             subValue={`/ ${data.total_storage}`}
           >
             <div className="w-full h-1 bg-gray-800 rounded-full mt-2 overflow-hidden">
-              {/* Visual placeholder until we aggregate real storage data */}
-              <div className="h-full bg-blue-500 w-[1%]" />
+              <div
+                className="h-full bg-blue-500 transition-all duration-500"
+                style={{ width: `${Math.min(100, Math.max(1, ((data.usedBytes || 0) / (data.totalBytes || 1)) * 100))}%` }}
+              />
             </div>
           </StatCard>
 

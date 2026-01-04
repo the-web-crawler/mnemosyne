@@ -14,6 +14,8 @@ export interface ClusterStatus {
     node_count: number;
     total_storage: string;
     used_storage: string;
+    usedBytes?: number;
+    totalBytes?: number;
     nodes: NodeStatus[];
 }
 
@@ -99,9 +101,16 @@ export async function getClusterStatus(): Promise<ClusterStatus> {
         if (activeNodes === 0) clusterState = "offline";
         else if (activeNodes < nodes.length) clusterState = "degraded";
 
-        // Aggregate Totals
-        // Garage uses raw bytes for capacity
-        const totalBytes = (statusData.nodes || []).reduce((acc: number, curr: any) => {
+        // Aggregate Totals - use dataPartition.available for actual disk space
+        const totalAvailableBytes = (statusData.nodes || []).reduce((acc: number, curr: any) => {
+            if (curr.isUp && curr.dataPartition?.available) {
+                return acc + curr.dataPartition.available;
+            }
+            return acc;
+        }, 0);
+
+        // Get allocated capacity from roles
+        const totalAllocatedBytes = (statusData.nodes || []).reduce((acc: number, curr: any) => {
             return acc + (curr.role?.capacity || 0);
         }, 0);
 
@@ -113,11 +122,28 @@ export async function getClusterStatus(): Promise<ClusterStatus> {
             return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
         };
 
+        // Fetch bucket info to get actual used storage
+        let usedBytes = 0;
+        try {
+            const bucketRes = await fetch(`${adminUrl}/v1/bucket?id=archive`, {
+                headers: getHeaders(),
+                next: { revalidate: 10 }
+            });
+            if (bucketRes.ok) {
+                const bucketData = await bucketRes.json();
+                usedBytes = bucketData.bytes || 0;
+            }
+        } catch (e) {
+            console.warn("[API] Could not fetch bucket info for used storage");
+        }
+
         return {
             status: clusterState,
             node_count: nodes.length,
-            total_storage: formatGlobalBytes(totalBytes),
-            used_storage: "0 B", // Cannot calculate easily from /status without metrics
+            total_storage: formatGlobalBytes(totalAvailableBytes || totalAllocatedBytes),
+            used_storage: formatGlobalBytes(usedBytes),
+            usedBytes,
+            totalBytes: totalAvailableBytes || totalAllocatedBytes,
             nodes: nodes
         };
 
