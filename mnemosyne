@@ -1,0 +1,107 @@
+#!/bin/bash
+
+# mnemosyne - CLI wrapper for Mnemosyne Cluster Management
+
+CMD=$1
+ARG=$2
+
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$PROJECT_DIR"
+
+show_help() {
+    echo "Usage: ./mnemosyne <command> [args]"
+    echo ""
+    echo "Commands:"
+    echo "  start           Start the cluster (docker compose up -d)"
+    echo "  stop            Stop the cluster (docker compose down)"
+    echo "  restart         Restart the cluster"
+    echo "  mount <path>    Mount the WebDAV share to a local folder"
+    echo "  unmount         Unmount the WebDAV share"
+    echo "  update          Pull latest code (RESET hard) and rebuild"
+    echo "  logs <service>  View logs (optional: service name)"
+    echo ""
+}
+
+case "$CMD" in
+    start)
+        echo "Starting Mnemosyne..."
+        docker compose up -d --build --remove-orphans
+        ;;
+    stop)
+        echo "Stopping Mnemosyne..."
+        docker compose down
+        ;;
+    restart)
+        echo "Restarting Mnemosyne..."
+        docker compose restart
+        ;;
+    mount)
+        if [ -z "$ARG" ]; then
+            echo "Error: details directory required."
+            echo "Usage: ./mnemosyne mount /path/to/folder"
+            exit 1
+        fi
+        
+        # Check for davfs2
+        if ! command -v mount.davfs &> /dev/null; then
+            echo "Error: davfs2 not installed. Run: sudo apt install davfs2"
+            exit 1
+        fi
+
+        echo "Creating mount point at $ARG..."
+        sudo mkdir -p "$ARG"
+        
+        echo "Mounting http://localhost:8080/archive to $ARG..."
+        echo "Note: If prompted, press Enter for username/password."
+        sudo mount -t davfs -o uid=$(id -un),gid=$(id -gn) http://localhost:8080/archive "$ARG"
+        echo "Success! Mounted at $ARG"
+        ;;
+    unmount)
+        echo "Unmounting..."
+        # Try finding where it is mounted if user didn't specify? 
+        # For simplicity, we assume user knows or we unmount by device URL logic, 
+        # but let's just ask 'umount -a' or expect user to pass dir.
+        # Actually, let's just try to unmount the known URL if possible, 
+        # or require an arg if provided.
+        
+        if [ -n "$ARG" ]; then
+             sudo umount "$ARG"
+        else
+            echo "Searching for Mnemosyne mounts..."
+            MOUNT_POINT=$(mount | grep "localhost:8080/archive" | awk '{print $3}')
+            if [ -n "$MOUNT_POINT" ]; then
+                echo "Found mount at: $MOUNT_POINT"
+                sudo umount "$MOUNT_POINT"
+                echo "Unmounted."
+            else
+                echo "No active Mnemosyne mounts found."
+            fi
+        fi
+        ;;
+    update)
+        echo "WARNING: This will RESET your local code to match the remote repository."
+        echo "Your .env and data/ folder will be preserved."
+        read -p "Are you sure? (y/N) " CONFIRM
+        if [[ "$CONFIRM" =~ ^[Yy]$ ]]; then
+            echo "Fetching latest code..."
+            git fetch origin
+            git reset --hard origin/master
+            echo "Rebuilding containers..."
+            docker compose up -d --build --remove-orphans
+            echo "Update Complete."
+        else
+             echo "Update cancelled."
+        fi
+        ;;
+    logs)
+        if [ -z "$ARG" ]; then
+            docker compose logs -f --tail=100
+        else
+            docker compose logs -f --tail=100 "$ARG"
+        fi
+        ;;
+    *)
+        show_help
+        exit 1
+        ;;
+esac
