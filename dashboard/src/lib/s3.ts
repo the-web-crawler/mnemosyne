@@ -1,4 +1,5 @@
 import { S3Client, ListObjectsV2Command, GetObjectCommand, PutObjectCommand, DeleteObjectCommand, CopyObjectCommand } from "@aws-sdk/client-s3";
+import { Readable } from "stream";
 
 // S3 client configured for Garage
 export function getS3Client() {
@@ -10,6 +11,12 @@ export function getS3Client() {
             secretAccessKey: process.env.S3_SECRET_ACCESS_KEY || "",
         },
         forcePathStyle: true, // Required for Garage
+        maxAttempts: 10, // Increase retries for resilient uploads
+        requestHandler: {
+            ...require("@smithy/node-http-handler").NodeHttpHandler.DEFAULT_INSTANCE,
+            connectionTimeout: 10000,
+            socketTimeout: 60000,
+        },
     });
 }
 
@@ -120,26 +127,33 @@ export async function uploadFile(path: string, body: Buffer | Uint8Array | strin
     await s3.send(command);
 }
 
-// Upload streaming data (for large files)
-export async function uploadFileStream(path: string, body: any, contentType?: string): Promise<void> {
+// Upload streaming data
+export async function uploadFileStream(path: string, body: any, contentType?: string, contentLength?: number): Promise<void> {
     const s3 = getS3Client();
-    const { Upload } = require("@aws-sdk/lib-storage");
 
-    const upload = new Upload({
-        client: s3,
-        params: {
-            Bucket: ARCHIVE_BUCKET,
-            Key: path,
-            Body: body,
-            ContentType: contentType || guessMimeType(path),
-        },
-        // Garage/S3 performance tuning
-        queueSize: 4,
-        partSize: 5 * 1024 * 1024, // 5MB parts
-        leavePartsOnError: false, // Clean up on failure
+    // Convert Web Stream to Node Stream if necessary (Next.js passes Web Stream)
+    let requestBody = body;
+    if (body && typeof body.getReader === 'function') {
+        // It's a Web Stream
+        try {
+            requestBody = Readable.fromWeb(body as any);
+        } catch (e) {
+            console.warn("Failed to convert Web Stream to Node Stream, using as is", e);
+        }
+    }
+
+    // For Garage in degraded state, single PUT might be more reliable than Multipart
+    // MPU requires quorum on mpu table AND block table.
+    // Single PUT only requires block table.
+    const command = new PutObjectCommand({
+        Bucket: ARCHIVE_BUCKET,
+        Key: path,
+        Body: requestBody,
+        ContentType: contentType || guessMimeType(path),
+        ContentLength: contentLength,
     });
 
-    await upload.done();
+    await s3.send(command);
 }
 
 // Move file to trash (soft delete) - resilient to background sync errors

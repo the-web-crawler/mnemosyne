@@ -43,18 +43,13 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
         const contentType = request.headers.get("content-type") || "application/octet-stream";
 
-        // Use streaming upload to handle large files better (multipart)
-        // and avoid loading entire file into memory
-        if (request.body) {
-            // Need to convert Web ReadableStream to Node stream or pass directly
-            // @aws-sdk/lib-storage handles Web Streams
-            const { uploadFileStream } = require("@/src/lib/s3");
-            await uploadFileStream(filePath, request.body, contentType);
-        } else {
-            // Fallback for empty body
-            const { uploadFile } = require("@/src/lib/s3");
-            await uploadFile(filePath, new Uint8Array(0), contentType);
-        }
+        // Fallback to buffering for reliability if streaming fails
+        // 14MB is safe for memory
+        const arrayBuffer = await request.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+
+        const { uploadFile } = require("@/src/lib/s3");
+        await uploadFile(filePath, buffer, contentType);
 
         return NextResponse.json({ success: true, path: filePath });
     } catch (error: any) {
