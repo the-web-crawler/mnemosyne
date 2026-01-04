@@ -42,6 +42,18 @@ do_unmount() {
     fi
 }
 
+# Helper: Remount paths (passed as space-separated string)
+do_remount() {
+    MOUNTS="$1"
+    for MP in $MOUNTS; do
+        if [ -n "$MP" ]; then
+            echo "Restoring mount at $MP..."
+            # Use the optimized mount flags
+            sudo mount -t davfs -o uid=$(id -un),gid=$(id -gn),use_locks=0 http://localhost:8080/archive "$MP"
+        fi
+    done
+}
+
 case "$CMD" in
     start)
         echo "Starting Mnemosyne..."
@@ -53,9 +65,15 @@ case "$CMD" in
         docker compose down
         ;;
     restart)
+        # Capture current mounts before we kill them
+        DETECTED_MOUNTS=$(mount | grep "localhost:8080/archive" | awk '{print $3}')
+        
         echo "Restarting Mnemosyne..."
         do_unmount
         docker compose restart
+        
+        # Restore mounts
+        do_remount "$DETECTED_MOUNTS"
         ;;
     mount)
         if [ -z "$ARG" ]; then
@@ -98,11 +116,22 @@ case "$CMD" in
         echo "Your .env and data/ folder will be preserved."
         read -p "Are you sure? (y/N) " CONFIRM
         if [[ "$CONFIRM" =~ ^[Yy]$ ]]; then
+            # Capture mounts
+            DETECTED_MOUNTS=$(mount | grep "localhost:8080/archive" | awk '{print $3}')
+            
+            echo "Unmounting before update..."
+            do_unmount
+
             echo "Fetching latest code..."
             git fetch origin
             git reset --hard origin/master
+            
             echo "Rebuilding containers..."
             docker compose up -d --build --remove-orphans
+            
+            # Restore mounts
+            do_remount "$DETECTED_MOUNTS"
+            
             echo "Update Complete."
         else
              echo "Update cancelled."
